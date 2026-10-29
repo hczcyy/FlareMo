@@ -90,8 +90,8 @@
   },
   "vars": {
     "FLAREMO_DEPLOY_REPOSITORY": "",
-    "FLAREMO_SINGLE_USER_EMAIL": "owner@flaremo.local",
-    "FLAREMO_SINGLE_USER_NAME": "FlareMo Owner",
+    "FLAREMO_SINGLE_USER_EMAIL": "hczcy@qq.com",
+    "FLAREMO_SINGLE_USER_NAME": "Mr.He",
     "FLAREMO_PUBLIC_URL": "https://memo.mrhe.net",
     "FLAREMO_TRUSTED_ORIGINS": "",
     "FLAREMO_EMBEDDING_PROVIDER": "workers-ai",
