@@ -37,6 +37,15 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
+      # 强制通过命令行注入密钥，绕过 Cloudflare 网页的锁死限制
+      - name: Force Set Cloudflare Secrets
+        run: |
+          echo "${{ secrets.FLAREMO_BOOTSTRAP_SECRET }}" | pnpm exec wrangler secret put FLAREMO_BOOTSTRAP_SECRET --name flaremo
+          echo "${{ secrets.BETTER_AUTH_SECRET }}" | pnpm exec wrangler secret put BETTER_AUTH_SECRET --name flaremo
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:
