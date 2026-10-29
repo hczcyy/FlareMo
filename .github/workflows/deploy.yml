@@ -26,14 +26,6 @@ jobs:
           
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
-        
-      # 这一步会调用官方原生的 provision 脚本，帮你自动创建 D1、R2 等资源
-      - name: Provision Resources
-        run: pnpm provision:remote
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          WRANGLER_CONFIG: wrangler.json
 
       - name: Build project
         run: pnpm build
