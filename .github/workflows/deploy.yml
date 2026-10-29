@@ -43,3 +43,6 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --config wrangler.json
+        env:
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          FLAREMO_BOOTSTRAP_SECRET: ${{ secrets.FLAREMO_BOOTSTRAP_SECRET }} 
