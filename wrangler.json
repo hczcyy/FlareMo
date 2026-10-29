@@ -92,7 +92,7 @@
     "FLAREMO_DEPLOY_REPOSITORY": "",
     "FLAREMO_SINGLE_USER_EMAIL": "owner@flaremo.local",
     "FLAREMO_SINGLE_USER_NAME": "FlareMo Owner",
-    "FLAREMO_PUBLIC_URL": "https://flaremo.example.workers.dev",
+    "FLAREMO_PUBLIC_URL": "https://memo.mrhe.net",
     "FLAREMO_TRUSTED_ORIGINS": "",
     "FLAREMO_EMBEDDING_PROVIDER": "workers-ai",
     "FLAREMO_EMBEDDING_MODEL": "@cf/qwen/qwen3-embedding-0.6b",
