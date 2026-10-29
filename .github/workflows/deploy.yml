@@ -27,9 +27,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
         
-      - name: Copy Wrangler Config
-        run: cp wrangler.jsonc.example wrangler.jsonc
-        
       # 这一步会调用官方原生的 provision 脚本，帮你自动创建 D1、R2 等资源
       - name: Provision Resources
         run: pnpm provision:remote
@@ -46,3 +43,6 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --config wrangler.json
+        env:
+          BETTER_AUTH_SECRET: "cU4eB6xD4mW2uU5iQ6wW9tK7aA2rR8eR"
+          FLAREMO_BOOTSTRAP_SECRET: "wR3bQ2qW9vE3sO1dY6jW8aI0wY5eY9dN"
