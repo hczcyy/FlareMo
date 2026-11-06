@@ -181,7 +181,7 @@ export const MemoContent = memo(function MemoContent({
     };
 
   return (
-    <div className={cn("memo-markdown text-[15px] leading-7", className)}>
+    <div className={cn("memo-markdown text-[16px] leading-7", className)}>
       <Markdown
         components={{
           a({ href, children, node: _node, ...props }) {
