@@ -3,9 +3,9 @@ import { MessageCircleIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { listMemoComments } from "@/api";
 import { useI18n } from "@/i18n";
-import { memoCommentsQueryKey } from "@/lib/query-keys";
 import { cn } from "@/lib/utils";
 
+// 修正：在当前文件内定义，不要从 query-keys 引入
 export const memoCommentsQueryKey = (memoId: string) =>
   ["memo-comments", memoId] as const;
 
@@ -76,7 +76,7 @@ export function MemoComments({
   const inline = variant === "inline";
   const sectionRef = useRef<HTMLElement | null>(null);
   
-  // 保留原生请求（虽然不显示，但为了满足可能的滚动定位逻辑，保留它）
+  // 为了不报错，保留原有的 query 逻辑（即使不显示）
   const commentsQuery = useQuery({
     queryKey: memoCommentsQueryKey(memoId),
     queryFn: () => listMemoComments(memoId),
