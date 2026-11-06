@@ -674,7 +674,7 @@ svg.lucide[stroke-width="2"] {
 
 @layer components {
   .memo-markdown {
-    @apply text-[15px] leading-7 text-foreground;
+    @apply text-[16px] leading-7 text-foreground;
     text-wrap: pretty;
     word-break: break-word;
   }
@@ -828,7 +828,7 @@ svg.lucide[stroke-width="2"] {
      reading feel like the same surface, minus read-view extras (heading
      anchors, image frames). The box grows with content up to a cap. */
   .composer-editor-content {
-    @apply min-h-32 max-h-80 overflow-y-auto px-4 pt-4 pb-2 text-[15px] leading-7 outline-none motion-safe:transition-[min-height,max-height,padding] motion-safe:duration-200 motion-safe:ease-signal;
+    @apply min-h-32 max-h-80 overflow-y-auto px-4 pt-4 pb-2 text-[16px] leading-7 outline-none motion-safe:transition-[min-height,max-height,padding] motion-safe:duration-200 motion-safe:ease-signal;
   }
 
   /* Inline edit in a timeline card: the text stays exactly where the read
@@ -842,7 +842,7 @@ svg.lucide[stroke-width="2"] {
      unclipped — a long article grows the page instead of scrolling inside
      a fixed box. */
   .article-editor-content {
-    @apply min-h-[55vh] px-1 pt-2 pb-2 text-[15px] leading-7 outline-none;
+    @apply min-h-[55vh] px-1 pt-2 pb-2 text-[16px] leading-7 outline-none;
   }
 
   .article-editor-content p {
