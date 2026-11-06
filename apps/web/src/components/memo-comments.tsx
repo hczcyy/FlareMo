@@ -37,7 +37,7 @@ const TwikooComment = ({ memoId }: { memoId: string }) => {
         containerRef.current.innerHTML = '';
         // @ts-ignore
         window.twikoo.init({
-          envId: 'https://tk.mrhe.net',
+          envId: 'https://pl.mrhe.net',
           el: containerRef.current,
           path: `/memos/${memoId}`,
           lang: 'zh-CN',
