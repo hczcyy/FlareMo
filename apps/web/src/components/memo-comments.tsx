@@ -29,15 +29,60 @@ import { cn, stripResourceName } from "@/lib/utils";
 export const memoCommentsQueryKey = (memoId: string) =>
   ["memo-comments", memoId] as const;
 
-/** A timeline card shows the latest few; the full thread lives on the memo. */
 const INLINE_LIMIT = 5;
 
-/**
- * Unsent drafts, by memo id. The virtualized timeline unmounts cards that
- * scroll away; keeping the draft here means a half-written reply is still
- * there when the card comes back.
- */
 const drafts = new Map<string, string>();
+
+// ================= 新增：Twikoo 封装组件 =================
+const TwikooComment = ({ memoId }: { memoId: string }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const loadTwikoo = () => {
+      if (document.getElementById('twikoo-script')) {
+        initTwikoo();
+        return;
+      }
+      const script = document.createElement('script');
+      script.id = 'twikoo-script';
+      script.src = 'https://registry.npmmirror.com/twikoo/2.0.17/files/dist/twikoo.min.js';
+      script.async = true;
+      script.onload = () => {
+        if (isMounted) initTwikoo();
+      };
+      document.body.appendChild(script);
+    };
+
+    const initTwikoo = () => {
+      // @ts-ignore
+      if (typeof window.twikoo !== 'undefined' && containerRef.current) {
+        containerRef.current.innerHTML = '';
+        // @ts-ignore
+        window.twikoo.init({
+          envId: 'https://tk.mrhe.net',
+          el: containerRef.current,
+          path: `/memos/${memoId}`,
+          lang: 'zh-CN',
+        });
+      }
+    };
+
+    loadTwikoo();
+
+    return () => {
+      isMounted = false;
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '';
+      }
+    };
+  }, [memoId]);
+
+  // 使用 tailwind 留出内边距
+  return <div ref={containerRef} className="py-4" />;
+};
+// ========================================================
 
 function CommentRow({
   comment,
@@ -88,11 +133,6 @@ function CommentRow({
   );
 }
 
-/**
- * The reply box: grows with its text, Enter sends and Shift+Enter breaks
- * the line (an IME composition is left alone). With `mentions` on, typing
- * "@" offers the team's members, the same people the server will notify.
- */
 function CommentComposer({
   autoFocus,
   memoId,
@@ -230,8 +270,6 @@ function CommentComposer({
           isPending={createMutation.isPending}
         />
       </div>
-      {/* In the flow, not floating: a timeline card is paint-contained
-          (`content-visibility: auto`), so an overlay would be clipped. */}
       {showSuggestions && (
         <div
           aria-label={t("comments.mentionList")}
@@ -267,15 +305,6 @@ function CommentComposer({
   );
 }
 
-/**
- * The thread under a memo, the way a post carries its replies: oldest
- * first. On a personal memo the only commenter is the author, which makes
- * it an annotation: a later thought attached to the earlier one instead of
- * a new, disconnected note.
- *
- * `page` is the memo detail's full thread; `inline` opens inside a timeline
- * card, keeps the latest few and links to the rest.
- */
 export function MemoComments({
   memoId,
   canComment,
@@ -283,54 +312,27 @@ export function MemoComments({
   variant = "page",
   autoFocus = false,
 }: {
-  /** Bare memo id (the `/memo/$memoId` route param). */
   memoId: string;
   canComment: boolean;
-  /** Offer "@name" completion: only where the memo reaches a team. */
   mentions?: boolean;
   variant?: "page" | "inline";
   autoFocus?: boolean;
 }) {
   const { t, locale } = useI18n();
   const queryClient = useQueryClient();
+  
+  // 为了不报错，保留原有的 query 逻辑（即使不显示）
   const commentsQuery = useQuery({
     queryKey: memoCommentsQueryKey(memoId),
     queryFn: () => listMemoComments(memoId),
   });
-  const refresh = () => {
-    void queryClient.invalidateQueries({
-      queryKey: memoCommentsQueryKey(memoId),
-    });
-    // The card's comment count rides the timeline list.
-    void queryClient.invalidateQueries({ queryKey: queryKeys.memos.all });
-  };
-  const deleteMutation = useMutation({
-    mutationFn: (comment: Memo) =>
-      trashMemo(stripResourceName(comment.name, "memos")),
-    onSuccess: () => {
-      toast.success(t("comments.deleted"));
-      refresh();
-    },
-    onError: (error) =>
-      toast.error(errorMessage(error, t("comments.deleteFailed"))),
-  });
 
-  const comments = commentsQuery.data?.comments ?? [];
   const inline = variant === "inline";
-  const shown = useMemo(
-    () => (inline ? comments.slice(-INLINE_LIMIT) : comments),
-    [comments, inline],
-  );
-  const hidden = comments.length - shown.length;
-
-  // Arriving through "#comments" (a card's comment count, a notification)
-  // lands on the thread once it has loaded, not on the top of the memo.
   const sectionRef = useRef<HTMLElement | null>(null);
-  const scrolledRef = useRef(false);
+  
   useEffect(() => {
-    if (inline || scrolledRef.current || !commentsQuery.data) return;
+    if (inline || !commentsQuery.data) return;
     if (window.location.hash !== "#comments") return;
-    scrolledRef.current = true;
     sectionRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
   }, [commentsQuery.data, inline]);
 
@@ -344,67 +346,15 @@ export function MemoComments({
       id={inline ? undefined : "comments"}
       ref={sectionRef}
     >
-      {!inline && (
-        <h2 className="flex items-center gap-1.5 text-sm font-medium">
-          <MessageCircleIcon className="size-4 text-muted-foreground" />
-          {t("comments.title")}
-          {comments.length > 0 && (
-            <span className="tabular-nums text-muted-foreground">
-              {comments.length}
-            </span>
-          )}
-        </h2>
-      )}
-      {commentsQuery.isLoading && (
-        <div className="flex gap-2.5 py-2.5">
-          <Skeleton className="size-6 rounded-full" />
-          <div className="flex flex-1 flex-col gap-1.5">
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="h-4 w-3/4" />
-          </div>
-        </div>
-      )}
-      {hidden > 0 && (
-        <Link
-          className="w-fit py-1.5 text-xs text-muted-foreground hover:text-foreground"
-          hash="comments"
-          params={{ memoId }}
-          to="/memo/$memoId"
-        >
-          {t("comments.viewAll", { count: comments.length })}
-        </Link>
-      )}
-      {shown.length > 0 && (
-        <ul className="flex flex-col">
-          {shown.map((comment) => (
-            <CommentRow
-              comment={comment}
-              key={comment.name}
-              locale={locale}
-              onDelete={
-                comment.can_manage
-                  ? () => deleteMutation.mutate(comment)
-                  : undefined
-              }
-            />
-          ))}
-        </ul>
-      )}
-      {commentsQuery.data && comments.length === 0 && !canComment && (
-        <p className="py-2 text-sm text-muted-foreground">
-          {t("comments.empty")}
-        </p>
-      )}
-      {canComment && (
-        <div className={inline ? "pt-1 pb-0.5" : "pt-1"}>
-          <CommentComposer
-            autoFocus={autoFocus}
-            memoId={memoId}
-            mentions={mentions}
-            onSubmitted={refresh}
-          />
-        </div>
-      )}
+      {/* 标题 */}
+      <h2 className="flex items-center gap-1.5 text-sm font-medium">
+        <MessageCircleIcon className="size-4 text-muted-foreground" />
+        评论
+      </h2>
+
+      {/* 👇 直接用 Twikoo 替换掉了原有的评论列表和输入框 👇 */}
+      <TwikooComment memoId={memoId} />
+      
     </section>
   );
 }
