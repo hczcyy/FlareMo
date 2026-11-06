@@ -533,7 +533,11 @@
   }
 
 ::-webkit-scrollbar {
-  width: 10px;
+  display: none; /* 全局隐藏 */
+}
+/* 针对 Firefox */
+* {
+  scrollbar-width: none;
 }
 
 ::-webkit-scrollbar-thumb {
