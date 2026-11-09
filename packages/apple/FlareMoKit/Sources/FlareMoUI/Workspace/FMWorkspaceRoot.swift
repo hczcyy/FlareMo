@@ -1,3 +1,4 @@
+#if os(macOS)
 import FlareMoCore
 import FlareMoDesign
 import SwiftUI
@@ -98,7 +99,11 @@ public struct FMWorkspaceRoot: View {
                                 model.deleteMemo(openMemo.id)
                                 model.closeDetail()
                             },
-                            onAddComment: { model.addComment($0) }
+                            onAddComment: { model.addComment($0) },
+                            onTagClick: { tag in
+                                model.closeDetail()
+                                model.searchQuery = "#" + tag
+                            }
                         )
                     } else {
                         FMComposer(text: $composerText, focusSignal: composerFocusSignal) {
@@ -189,6 +194,7 @@ public struct FMWorkspaceRoot: View {
             TextField("搜索", text: searchBinding)
                 .textFieldStyle(.plain)
                 .focused($searchFocused)
+                .accessibilityLabel("搜索记录")
                 .font(.system(size: 12.5))
                 .foregroundStyle(FMColor.foreground.color)
             if !model.searchQuery.isEmpty {
@@ -271,3 +277,4 @@ struct FMStoreFailureNotice: View {
         }
     }
 }
+#endif

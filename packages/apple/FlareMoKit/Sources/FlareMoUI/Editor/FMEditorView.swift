@@ -47,6 +47,8 @@ import SwiftUI
         /// 每 +1 一次就抢一次焦点。SwiftUI 的 @FocusState 管不到 NSViewRepresentable，
         /// 所以用「信号计数」这种笨但可靠的办法。
         private let focusSignal: Int
+        /// 工具条通过它作用到选区上。
+        private let controller: FMEditorController?
 
         public init(
             text: Binding<String>,
@@ -54,7 +56,8 @@ import SwiftUI
             minHeight: CGFloat = 44,
             maxHeight: CGFloat = 220,
             onFocusChange: ((Bool) -> Void)? = nil,
-            focusSignal: Int = 0
+            focusSignal: Int = 0,
+            controller: FMEditorController? = nil
         ) {
             _text = text
             self.placeholder = placeholder
@@ -62,6 +65,7 @@ import SwiftUI
             self.maxHeight = maxHeight
             self.onFocusChange = onFocusChange
             self.focusSignal = focusSignal
+            self.controller = controller
         }
 
         public func makeCoordinator() -> Coordinator {
@@ -74,6 +78,7 @@ import SwiftUI
             // TextKit 2：NSTextView(usingTextLayoutManager:) 是 2 的唯一正门。
             let textView = FMFocusReportingTextView(usingTextLayoutManager: true)
             textView.delegate = context.coordinator
+            controller?.textView = textView
             textView.onFocusChange = { [weak coordinator = context.coordinator] focused in
                 coordinator?.onFocusChange?(focused)
             }
@@ -239,37 +244,58 @@ import SwiftUI
 
         public static func applySpans(to storage: NSTextStorage, in range: NSRange, source: String) {
             let spans = spans(in: source, limitedTo: range)
+            // 扫描器的 `.heading` span 只覆盖 `# ` 前缀（前缀要单独降色），
+            // 但编辑器里整行都该是标题字号——不然写的时候只有井号变大，正文还是 15pt，
+            // 和阅读态、Web 编辑器都不一致。这里先算「每行是几级标题」，整行套字号。
+            let nsSource = source as NSString
+            let headingLevels = headingLevelsByLine(spans: spans, nsSource: nsSource)
+            for (line, level) in headingLevels {
+                let lineRange = nsSource.lineRange(for: NSRange(location: line, length: 0))
+                let clipped = NSIntersectionRange(lineRange, range)
+                guard clipped.length > 0 else { continue }
+                storage.addAttribute(
+                    .font,
+                    value: styledFont(size: headingSize(level: level), bold: true),
+                    range: clipped
+                )
+            }
 
             for span in spans {
                 let spanRange = NSRange(location: span.location, length: span.length)
                 guard spanRange.location != NSNotFound, spanRange.length > 0 else { continue }
                 guard NSIntersectionRange(spanRange, range).length > 0 else { continue }
 
+                // 行内样式要跟着所在行的标题字号走：标题里的 `**加粗**` 是 20pt 粗，
+                // 不是 15pt 粗。
+                let lineStart = nsSource.lineRange(for: NSRange(location: span.location, length: 0)).location
+                let spanBaseSize = headingLevels[lineStart].map(headingSize(level:)) ?? bodyFontSize
+
                 switch span.kind {
                 case .bold:
-                    storage.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: bodyFontSize), range: spanRange)
+                    storage.addAttribute(
+                        .font,
+                        value: styledFont(size: spanBaseSize, bold: true),
+                        range: spanRange
+                    )
                 case .italic:
                     storage.addAttribute(
                         .font,
-                        value: NSFontManager.shared.convert(
-                            NSFont.systemFont(ofSize: bodyFontSize),
-                            toHaveTrait: .italicFontMask
-                        ),
+                        value: styledFont(size: spanBaseSize, italic: true),
                         range: spanRange
                     )
                 case .boldItalic:
                     storage.addAttribute(
                         .font,
-                        value: NSFontManager.shared.convert(
-                            NSFont.boldSystemFont(ofSize: bodyFontSize),
-                            toHaveTrait: .italicFontMask
-                        ),
+                        value: styledFont(size: spanBaseSize, bold: true, italic: true),
                         range: spanRange
                     )
                 case .code:
                     storage.addAttributes(
                         [
-                            .font: NSFont.monospacedSystemFont(ofSize: bodyFontSize - 1, weight: .regular),
+                            .font: NSFont.monospacedSystemFont(
+                                ofSize: spanBaseSize - 1,
+                                weight: .regular
+                            ),
                             .foregroundColor: FMColor.brand500.nsColor,
                         ],
                         range: spanRange
@@ -320,10 +346,40 @@ import SwiftUI
             }
         }
 
+        /// 造一个带粗/斜的系统字体。
+        ///
+        /// 不能用 `NSFontManager.convert(_:toHaveTrait:)`：它对 `.systemFont` 常常直接返回原字体，
+        /// 结果就是斜体表达式在编辑器里毫无变化（这个 bug 是靠单测发现的）。
+        /// 走 `fontDescriptor.withSymbolicTraits` 才能拿到 SF Pro 的 italic 变体。
+        private static func styledFont(size: CGFloat, bold: Bool = false, italic: Bool = false) -> NSFont {
+            let weight: NSFont.Weight = bold ? .semibold : .regular
+            let base = NSFont.systemFont(ofSize: size, weight: weight)
+            guard italic else { return base }
+            // 只传 `.italic` 会把字重丢掉（拿到的是 RegularItalic）；
+            // 粗斜体必须把 `.bold` 一起塞进 traits，才能拿到 BoldItalic。
+            var traits: NSFontDescriptor.SymbolicTraits = [.italic]
+            if bold { traits.insert(.bold) }
+            let descriptor = base.fontDescriptor.withSymbolicTraits(traits)
+            return NSFont(descriptor: descriptor, size: size) ?? base
+        }
+
+        /// 每行行首位置 → 标题级别（编辑器据此刻整行字号）。
+        private static func headingLevelsByLine(spans: [FMSourceSpan], nsSource: NSString) -> [Int: Int] {
+            var levels: [Int: Int] = [:]
+            for span in spans {
+                guard case let .heading(level) = span.kind else { continue }
+                let lineStart = nsSource.lineRange(for: NSRange(location: span.location, length: 0)).location
+                levels[lineStart] = level
+            }
+            return levels
+        }
+
+        /// 与阅读态、Web 的 `.memo-markdown` 同口径：h1 20 / h2 18 / h3 16。
+        /// 编辑时看到的层级和读的时候不一致，是最容易被忽略的不一致。
         private static func headingSize(level: Int) -> CGFloat {
             switch level {
             case 1: 20
-            case 2: 17
+            case 2: 18
             case 3: 16
             default: bodyFontSize
             }
