@@ -117,6 +117,9 @@ FlareMo/
 ### 4.1 已经具备的（不用重做）
 
 - **客户端接入层已实现并提交**：`apps/worker/src/routes/connect-api.ts` 提供 `POST /connect/device`、`POST /connect/token`、`POST /api/app/connect/approve`、`GET|DELETE /api/app/connect/apps/:id`，配对页 `apps/web/src/pages/connect-page.tsx` 已上线，三张表（`app_clients` / `device_authorizations` / `device_refresh_tokens`）已建（migration `0046`）。access 14 天、refresh 90 天。
+  - ⚠️ **`client_type` 的真实枚举是 `device | web | script`**（`packages/contracts/src/agent-access.ts` 的 `APP_CLIENT_TYPES`），**没有 `mac` / `windows` / `ios` / `android`**。客户端要区分平台得先扩这个枚举，否则传平台名会 400。
+  - ⚠️ **`access_denied` 目前不可达**：服务端只有批准路径，没有拒绝路径。客户端照契约实现了 `.denied` 分支，但现状只会遇到 `authorization_pending` / `expired_token`。
+  - ⚠️ **refresh token 轮换没有宽限期**：刷新成功会立刻作废旧的一对。客户端如果在「刷新成功、写 Keychain 之前」崩溃，就只能重新配对。M0 应给旧 refresh 留几十秒宽限。
 - **增量同步所需的索引**：`memos_user_updated_id_idx (user_id, updated_at, id)` 已存在；`updated_at` 是 `toISOString()` 毫秒文本，字典序 = 时间序。D10 定案后同步走 `sync_changes.seq`，这个索引留给「全量对齐 / 降级轮询」用。
 - **四类实体的现状**：`attachments` / `articles` 都已有 `updated_at` + `deleted_at`；**评论不是独立表**——它是一条完整的 `memos` 行，外加一条 `memo_relations(memo_id=评论, related_memo_id=父记录, type='comment')`，所以给 `memos` 加 `version` 就顺带覆盖了评论的乐观锁。
 - **软删天然是 tombstone**：`memos.status` + `deleted_at` 已有，进回收站即写 `deletedAt/updatedAt`。
@@ -239,19 +242,63 @@ SELECT `user_id`,'memo',`id`, CASE WHEN `deleted_at` IS NULL THEN 'upsert' ELSE 
 // GET /api/app/sync/changes?since=1024&limit=500
 {
   "changes": [
-    { "seq": 1025, "entity": "memo",       "id": "memo_xxx",  "op": "upsert", "version": 7, "updated_at": "2026-11-08T12:00:00.123Z" },
-    { "seq": 1026, "entity": "relation",   "id": "memo_zzz",  "op": "upsert", "version": 0, "updated_at": "2026-11-08T12:00:01.000Z" },
-    { "seq": 1027, "entity": "attachment", "id": "att_aaa",   "op": "delete", "version": 3, "updated_at": "2026-11-08T12:01:00.456Z" }
+    { "seq": 1025, "entity": "memo",       "entity_id": "memo_xxx", "op": "upsert", "version": 7, "updated_at": "2026-11-08T12:00:00.123Z" },
+    { "seq": 1026, "entity": "relation",   "entity_id": "rel_zzz",  "op": "upsert", "version": 1, "updated_at": "2026-11-08T12:00:01.000Z" },
+    { "seq": 1027, "entity": "attachment", "entity_id": "att_aaa",  "op": "delete", "version": 3, "updated_at": "2026-11-08T12:01:00.456Z" }
   ],
   "next_seq": 1027,
   "has_more": true
 }
 ```
 
+字段口径（2026-11-09 定，实现以此为准）：
+- 引用里用 **`entity` + `entity_id`**，不要用裸 `id`（`id` 有歧义，读不出来是谁的 id）。
+- `op` 只有 `upsert` / `delete` 两个值，不要发明第三个。
+- **`/sync/changes` 的空轮询必须廉价**：没有新变更时直接返回空数组（或 204），不要每次扫全表——
+  客户端是 30 秒一轮的常驻轮询，这条直接决定账单（§9 成本模型）。
+
+`POST /api/app/sync/hydrate` 的请求/响应（引用 → 正文）：
+
+```json
+// 请求：一次 ≤200 个 id
+{ "memo_ids": ["memo_xxx"], "attachment_ids": ["att_aaa"], "article_ids": [], "relation_ids": ["rel_zzz"] }
+
+// 响应：只回客户端要的那几类
+{
+  "memos":       [ { "id": "memo_xxx", "content": "...", "version": 7, "...": "..." } ],
+  "attachments": [ { "id": "att_aaa", "r2_key": "...", "mime": "image/png", "bytes": 12345, "state": "ready", "version": 3 } ],
+  "articles":    [],
+  "relations":   [ { "id": "rel_zzz", "memo_id": "memo_xxx", "related_memo_id": "memo_yyy", "type": "comment", "version": 1 } ]
+}
+```
+
+`relation` 单列出来的理由：`sync_changes` 里会出现 `entity='relation'`，而关系行只有
+`memo_id/related_memo_id/type`，没有正文——不给它一条 hydrate 通道，这类变更就没法落库。
+
 - 返回的是**引用**，不内联正文：客户端按 `entity` 批量补正文（`POST /api/app/sync/hydrate`，一次 ≤200 个 id，返回 memo/attachment/article 三类正文）。这样一次同步响应不会被长文撑爆，弱网也不至于整轮重来。**hydrate 计入上面的「同步端点 2 人日」。**
 - 删除记录保留 **30 天**（`FLAREMO_TRASH_RETENTION_DAYS` 默认 30，之后硬删；`sync_changes` 同步裁剪）。`since` 早于裁剪点服务端返回 **410**，客户端走「全量重建」路径。
 - **实时性不靠长连接**：服务端有变更 → APNs/FCM 静默推送 → 客户端唤醒后 pull 一次。**SSE 只作桌面可选通道，移动端一律不挂**（理由见 §4.10）；断线超过 7 天或收 410 用 pull 补洞。
 - **不要**用 `GET /api/app/memos?order_by=updated_at` 当同步（分页 + CEL 限制会漏记录），它只作旧实例的降级兼容。
+
+#### 4.4.1 实现落地后补充的口径（2026-11-09，以后端实现为准）
+
+- **`memo_relations.updated_at` 的 1970 占位**：迁移 0048 给它 `DEFAULT '1970-01-01T00:00:00.000Z'`，
+  而新写入的评论关系不会填这一列。0049 的触发器和 `/sync/hydrate` 都把 1970 归一成 `created_at`，
+  否则客户端会收到一堆 1970 的变更时间。**客户端不要再自己做这层归一。**
+- **`/sync/hydrate` 会返回软删行（tombstone）**：客户端需要镜像 `deleted_at` + `version`，
+  不能只靠 `op=delete` 事件——两者最终状态一致，但 hydrate 这条路径是幂等的、更可靠。
+- **`sync_changes` 的裁剪必须按 `seq` 前缀删**。裁剪任务（按 `FLAREMO_TRASH_RETENTION_DAYS`）
+  要先用 cutoff 算出对应 `max(seq)` 水位，再 `DELETE WHERE seq <= watermark`；
+  **绝不能按 `updated_at` 删任意行**——那样 `seq` 中间会出现空洞，
+  而 410 的判定依赖全局 `min(seq)`，空洞是发现不了的，客户端会静默漏数据。
+- **`/instance` 的 capabilities 按实际能力给值**（不许写"计划中"的能力）：
+  当前是 `sync_changes:1 / sync_hydrate:1 / soft_delete_tombstone:1 / optimistic_lock:0 /
+  native_push:[] / direct_upload:0 / pat_grant:0`。客户端据此降级——
+  `optimistic_lock:0` 就意味着**别指望 409**，冲突只能靠 LWW 兜底。
+- **附件正文的 MIME 列名是 `content_type`**，真实响应里没有 `mime` / `sha256` 两个字段。
+  客户端按 `content_type` 解码（Apple 侧已改，被这条坑过一次）。
+- **团队可见行不进个人同步流**：触发器按 `NEW.user_id` 记账，每个用户只拿到自己写的行。
+  v1 按「个人副本」处理；产品若要求团队行也落本地，需要另加 fan-out 规则（§4.12 #7）。
 
 ### 4.5 冲突与幂等
 
@@ -288,11 +335,15 @@ SELECT `user_id`,'memo',`id`, CASE WHEN `deleted_at` IS NULL THEN 'upsert' ELSE 
 - **降级**：实例没有 `direct_upload` 能力或签名失败 → 回落 `POST /api/v1/attachments` multipart。
 - **代价**：Worker 不再承担 25MiB 流量，但多了一个可直接写的签名面——URL 必须短时（建议 10 分钟）、绑定单对象、限制大小与 content-type。
 
-### 4.9 纯 PAT 换发（D11）
+### 4.9 纯 PAT 换发（D11，**未实现**）
 
 - `POST /connect/token` 新增 `grant_type=urn:flaremo:grant-type:pat`：客户端用用户手动创建的 PAT 换 access + refresh，供没有浏览器会话的场景（脚本、换机后只剩 PAT）。
 - 兑换时校验 PAT 的 scope（`notes` / `admin`）与撤销状态，并把令牌归因到 `app_clients`，保证「已连接应用」页能看见、能撤销。
 - 风险控制：按 PAT 限流（如每小时 N 次）、写审计、`admin` scope 的 PAT 是否允许换发需要单独确认（默认**不允许**，管理面必须走浏览器会话）。
+
+**现状（2026-11-09 核实）**：`connect-api.ts` 只有 `device_code` 与 `refresh_token` 两个 grant，
+其它落到 `unsupported_grant_type`；`/api/app/instance` 也自报 `pat_grant: 0`。
+本节是**待做**，不是已定案——文档之前把它写在「已新增」里是错的。
 
 ### 4.10 推送与 ASR
 
@@ -313,6 +364,21 @@ SELECT `user_id`,'memo',`id`, CASE WHEN `deleted_at` IS NULL THEN 'upsert' ELSE 
 
 **配套要求（必做，非待定）**：`POST /api/app/memos` 与 `/api/app/articles` 必须接受**客户端生成的 UUIDv7 id**并保持幂等，否则离线创建的笔记在同步前无法被引用、排期或评论（本地存储的做法见 §7.7）。工作量约 0.5 人日，未计入上面的估算。
 
+### 4.12 本地库已实现、待 M0 确认的契约细节
+
+本地库（`FlareMoCore/Database`）已按 §7.7 落地并通过 58 个单测。下面这些点
+客户端**已经按某一种解释写好了**，M0 落地服务端时必须逐条对齐，否则同步层要返工：
+
+| # | 客户端当前做法 | 需要服务端确认的点 |
+| --- | --- | --- |
+| 1 | create 的 outbox body 带 `{id, content, visibility, source, client_id, payload, created_at, updated_at, team_id?}`，`id` 用客户端 UUIDv7 | ✅ **已修（2026-11-09）**：`createMemoSchema` 接受可选 `id`（`memos/<uuid>` 或裸 uuid），`createMemo` 优先用它，同 id 重放幂等，跨账号抢同一 id 返回 409。真实 curl 验证 `/sync/changes` 的 `entity_id` 就是客户端 id。**注意：顶层 `client_id` 仍被忽略**，幂等键还是 `payload.client_id` |
+| 2 | 乐观锁字段放在 outbox payload 的 `expected_version` | 服务端用 body 字段还是 `If-Match` header |
+| 3 | 软删 = `op:delete` + payload `{status:"trashed", deleted_at, expected_version}` | 服务端回收站是 PATCH status，push 层需要明确映射 |
+| 4 | `source` 默认 `"apple"`（≤64 字符） | 来源统计口径：`apple` / `native` / `macos` 用哪个 |
+| 5 | blob 路径 `<appSupport>/blobs/<sha 前2>/<sha 次2>/<sha 全>` | §7.7 写的 `<sha2>/<sha2>/<sha>` 两级各指什么 |
+| 6 | `blobs.state` 取值 `staged / ready / missing` | 与 `attachments.state`（ready/deleting/missing）的对应关系 |
+| 7 | 本地列表/搜索不按 `user_id` 过滤（本地库 = 当前用户可见副本） | v1 若把团队可见行也同步进本地，这是否是预期 |
+| 8 | 分页按服务端默认 `(pinned, created_at, id)`；`order_by=updated_at` 的降级轮询留给同步层 | §7.6 降级路径是否仍要保留 |
 ---
 
 ## 5. Apple 端（macOS 先，iOS 第三步）
@@ -327,17 +393,76 @@ SELECT `user_id`,'memo',`id`, CASE WHEN `deleted_at` IS NULL THEN 'upsert' ELSE 
 ### 5.2 工程结构与模块
 
 ```
-apps/apple/FlareMo.xcodeproj
-├── FlareMo-macOS        (SwiftUI, macOS 26+)
-├── FlareMo-iOS          (SwiftUI, iOS 26+)      # M3 才建
-├── FlareMoShareExtension(iOS)                    # M3
-└── packages/apple/FlareMoKit/
-    ├── Core/     API 客户端（生成的）、Auth、Sync、Store（GRDB）、Models
-    ├── Design/   Theme（生成）、组件、字体
-    └── Markdown/ 解析 + 内联样式计算（纯逻辑，可单测）
+apps/apple/
+├── FlareMo.xcodeproj            # 壳工程：macOS + iOS 两个 target（iOS 在 M3 建）
+└── scripts/package-macos.sh     # 手搓 .app：工程没好时也能双击跑起来
+
+packages/apple/FlareMoKit/       # 本地 SwiftPM 包，全部逻辑在这里
+├── Package.swift                # GRDB / swift-markdown 锁精确版本
+├── Makefile                     # 自动在 Xcode 与 CLT 之间选工具链
+├── Sources/
+│   ├── FlareMoCore/             # 本地库（GRDB）、API 客户端、同步、模型
+│   ├── FlareMoDesign/           # 生成 token + 排版阶梯 + 纸纹/阴影/动效策略
+│   ├── FlareMoMarkdown/         # 解析 + 行内样式计算（纯逻辑，可单测）
+│   ├── FlareMoUI/               # 工作区界面：侧栏/时间线/输入框/设置
+│   ├── FlareMoMac/              # macOS App 壳：@main、菜单、快捷键
+│   └── FlareMoPreview/          # 开发渲染器：渲染 PNG 或直接开窗口
+└── Tests/
 ```
 
-**编辑器不放进共享包**：`NSTextView`（macOS）与 `UITextView`（iOS）的视图层各写一份，样式计算层（纯 Swift）放 `Markdown/` 共享。
+**界面也进包，App 工程只当壳**：这样 macOS 与 iOS 共享同一批 SwiftUI 视图，
+`FlareMoMac`/将来的 `FlareMoIOS` 各自只写入口与平台专属集成（菜单栏、分享扩展、
+WidgetKit）。快照测试与预览器也因此不需要起 App。
+
+**编辑器不放进共享包**：`NSTextView`（macOS）与 `UITextView`（iOS）的视图层各写一份，样式计算层（纯 Swift）放 `FlareMoMarkdown/` 共享。
+
+### 5.2.1 本机开发环境（已落地）
+
+Xcode 27.2 未装好、或许可协议（`sudo xcodebuild -license accept`）还没接受时，
+**内核包照样能编译与单测**——Command Line Tools 自带 Swift 6.4.2 与 macOS SDK：
+
+```bash
+cd packages/apple/FlareMoKit
+make build          # 编译
+make test           # 单测
+make theme          # 重新生成 Theme.swift（= pnpm apple:theme）
+make fmt            # swift-format（需 Xcode 工具链）
+```
+
+两个已知坑，Makefile 已经处理：
+
+1. **SwiftUI 的属性包装是宏**（`@State`/`@Binding`），宏插件 `libSwiftUIMacros.dylib`
+   只在 Xcode 里，不在 CLT 里。用 CLT 编译必须显式给：
+   `-Xswiftc -plugin-path -Xswiftc /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins`
+2. **Xcode 装好但许可未接受时**，`xcode-select` 指向 Xcode 会让 `swift build` 直接报
+   license 错误。用 `DEVELOPER_DIR=/Library/Developer/CommandLineTools` 回落。
+
+看界面（不需要 Xcode 工程、不需要模拟器）：
+
+```bash
+swift run flaremo-preview            # 渲染 light/dark PNG 到 ./Temp/preview/
+swift run flaremo-preview --window   # 直接开一个窗口看真实交互
+apps/apple/scripts/package-macos.sh  # 打成 Temp/build/FlareMo.app，双击可跑
+```
+
+预览器走 `NSHostingView` 的真实布局再截位图，不用 SwiftUI 的 `ImageRenderer`——
+后者给 `GeometryReader` 的提议尺寸不可靠，会让依赖窗口宽度的布局算错列宽。
+
+Xcode 装好并接受许可（`sudo xcodebuild -license accept`）之后，工程路径可用：
+
+```bash
+cd apps/apple
+xcodebuild -scheme FlareMo-macOS -configuration Debug build
+xcodebuild -scheme FlareMo-iOS -configuration Debug \
+  -destination 'platform=iOS Simulator,name=iPhone 17' build
+xcrun simctl install booted ../../Temp/DerivedData/Build/Products/Debug-iphonesimulator/FlareMo.app
+xcrun simctl launch booted app.flaremo.ios
+```
+
+`FlareMo.xcodeproj` 是**手写的**（两个 target + 一个本地 SwiftPM 包引用），
+刻意用 Xcode 16 起的 file-system-synchronized group：pbxproj 里不列源文件，
+所以新增 .swift 不需要改工程文件，也不会有 merge 冲突——这正是 §3 里
+「不引 Tuist / XcodeGen」的依据。改 target 结构才需要动它。
 
 ### 5.3 依赖清单（全部过 D7 白名单）
 
@@ -357,8 +482,8 @@ apps/apple/FlareMo.xcodeproj
 ### 5.4 数据层与搜索
 
 - 本地用 **GRDB + 系统 SQLite**，与 D1 同构；直接复用 `migrations/*.sql` 里可复用的部分，语义（软删、`updated_at` 毫秒文本、游标）与云端一致。
-- **FTS5 caveat（必须验收）**：服务端 `memos_fts` 用 `unicode61`，CJK 连续文本被当单 token，所以服务端中文搜索实为 `LIKE %关键词%` 降级（`memos-read.ts:117`）。本地若用 `trigram` 召回更好但**要求 ≥3 字符**，两个汉字的查询搜不到，且与 Web 端结果不一致。
-  **策略**：本地建 `trigram` 索引 + **短 CJK 查询（<3 字符）降级 LIKE**，行为对齐服务端；在线时优先服务端搜索。把「中文两字搜索」写进 M1 验收项。
+- **FTS5 caveat（必须验收）**：服务端 `memos_fts` 用 `unicode61`，CJK 连续文本被当单 token，所以服务端中文搜索实为 `LIKE %关键词%` 降级（`memos-read.ts:117`）。本地若用 `trigram` 召回更好但**要求 ≥3 字符**——这个限制**与语言无关**，英文两字母（如 `ai`）同样不召回。
+  **策略**：本地建 `trigram` 索引 + **任何 <3 字符的查询降级 LIKE**（不分语言，纯标点同样降级），行为对齐服务端；在线时优先服务端搜索。把「中文两字搜索」与「英文两字母搜索」一起写进 M1 验收项。
 - 同步引擎：单写者 outbox + 水位游标 + `client_id` 幂等 + 冷启动全量对齐（见 §7.5）。
 
 ### 5.5 编辑器
@@ -373,6 +498,13 @@ apps/apple/FlareMo.xcodeproj
 ### 5.6 Markdown 渲染
 
 `swift-markdown` 解析成块模型 → 自绘 SwiftUI（只渲染阅读态：卡片、详情、回顾）。块模型与编辑器的样式计算共用一份，放内核包做单测。**v1 不做代码高亮**；要做时用 Highlightr 2.3.0（MIT，JavaScriptCore，有主线程成本）或构建期把 shiki 转 token JSON。
+
+已落地（`FlareMoMarkdown`）：
+
+- **块模型**：`FMBlock`（paragraph / heading / bullet / ordered / quote / codeBlock / divider / todo）+ `FMBlockParser`（swift-markdown AST）。渲染器还需要文字，所以另给 `FMBlockParser.contents(in:) -> [FMBlockContent]`（块 + 块文本，span 偏移相对块文本的 UTF-16）。
+- **行内扫描器**：`FMInlineScanner`（手写单遍，**不用 AST**——逐键解析太慢且会丢标记符号位置）。10KB 文本 debug 1.05ms / release 0.105ms，单测断言 <3ms，另有防 O(n²) 的刁钻输入组。
+- 有意降级：行内标记不跨行；嵌套强调用「就近收尾」配对（`**粗 *斜* 体**` 正确，`*斜 **粗** 斜*` 会配错但不吞后文）；4 空格缩进行不认块级；表格/图片/HTML 在块模型里降级（对齐 Web 的 skipHtml）。
+- **`==高亮==` 不进 v1**：扫描器能识别，但编辑器与阅读态都不上色——Web 端没有这个语法，原生端单独支持只会让同一条记录两端显示不同。要支持就两端一起加。
 
 ### 5.7 系统集成
 
@@ -415,6 +547,33 @@ apps/apple/FlareMo.xcodeproj
 - **minSdk 26 / targetSdk 36**（Play 自 2026-08-31 起要求新应用与更新 ≥36）/ compileSdk 37（若 API 37 未定稿则用 36）。
 - 锁定版本，不跟随升级：Gradle 9.8/9.9 与 AGP 10.0（年底）会改 DSL；CMP 1.13 移除 JRE 字体是破坏性变更。
 
+#### 6.1.1 本机实测落地（2026-11-09）
+
+工程已建好并跑通（Android APK 装上模拟器、桌面窗口在 macOS JVM 上起得来）。
+实际落地与上面清单有**三处偏差**，都是被工具链逼的，不是随手升级：
+
+| 项 | 计划 | 实际 | 原因 |
+| --- | --- | --- | --- |
+| Compose Multiplatform | 1.12.2 | **1.11.1** | 1.12.x 的 androidx compose 1.12.1 要求 `compileSdk 37`，而 SDK 里只有 `android-37.2-beta*`，没有稳定版 37。等稳定 37 发布再升 |
+| Gradle | 9.5.0 | **9.5.0（wrapper）** | 机器上装的是 9.8.2，wrapper 钉 9.5.0，命令行一律走 `./gradlew` |
+| 模块路径 | `core:model`、`shared:ui` | **`core-model`、`shared-ui`** | Gradle 会为嵌套的 `:core:model` 自动创建 `apps/kotlin/core/` 中转项目，而内核目录在 `packages/kotlin/`，必然报 "projectDirectory does not exist"。平铺命名 + `projectDir` 指过去 |
+
+**AGP 9 的三个硬坑**（踩过，写下来省下一次）：
+
+1. **`org.jetbrains.kotlin.android` 插件必须删掉**。AGP 9.0 起 Kotlin 支持内置，
+   叠加会直接报 `The 'org.jetbrains.kotlin.android' plugin is no longer required`。
+   Android App 模块只留 `com.android.application` + `org.jetbrains.kotlin.plugin.compose`。
+2. **KMP 模块不能用 `com.android.library`**，必须换成
+   `com.android.kotlin.multiplatform.library`（AGP 9 起两者不兼容），
+   并且 Android 目标写在 `kotlin { androidLibrary { namespace/compileSdk/minSdk } }` 里，
+   **不再有 `androidTarget()` 和顶层 `android {}` 块**。
+3. **JDK 必须是 21**。机器上同时有 brew 默认的 JDK 27，Gradle 会挑 27 并报
+   `Unsupported class file major version`，所以在 `gradle.properties` 里钉
+   `org.gradle.java.home=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`。
+
+另外：`enableEdgeToEdge()` 之后内容会画到状态栏下面，
+Compose 侧要显式 `Modifier.safeDrawingPadding()`，否则标题栏会和系统图标重叠。
+
 ### 6.2 工程结构
 
 ```
@@ -452,9 +611,27 @@ packages/kotlin/
 
 ### 6.4 数据层
 
-- **Room 3 + `BundledSQLiteDriver`**：Android/JVM 用同一份打包 SQLite（版本可控），`androidx.room3.Fts5` 官方支持。
-- **CJK 搜索必须复刻服务端降级逻辑**（§5.4）：本地 trigram + 短 CJK 查询 LIKE，否则两端结果不一致。
-- 启动时若 FTS5 不可用要能降级（建表失败不能崩）。
+**v1 实际实现：`androidx.sqlite` + `BundledSQLiteDriver` + 手写 SQL**（不是 Room）。
+
+原因（2026-11-09 实测，不是偏好）：
+1. **Room 没有 3.x**。文档原先写的 "Room 3.0.3" 不存在，Android Maven 上最新是 **2.8.5**。
+2. **Room 的代码生成依赖 KSP**，而 AGP 9 起 Kotlin 编译内置进 android 插件，
+   KSP 与「AGP 9 内置 Kotlin」目前没打通；为它把 AGP 降回 8.x 得不偿失。
+3. 我们的表只有三张（memos / outbox / sync_state），手写 SQL 的维护成本低于
+   引入一整套注解处理器；而 `BundledSQLiteDriver` 仍然满足「SQLite 版本钉在依赖里、
+   不依赖系统/ROM」这条硬要求（§6.4 原本的理由）。
+
+保持不变的约定：
+- SQLite 版本来自依赖（`androidx.sqlite:sqlite-bundled`），不依赖系统 SQLite
+- 五条 PRAGMA 与 Apple 端一致（WAL / synchronous=FULL / foreign_keys / busy_timeout / temp_store）
+- 表结构、列名、软删语义、`version` 乐观锁、ISO 毫秒文本时间都与 D1 和 Apple 端对齐
+- `schema 变更 = 整库重建`（本地库是副本，不做迁移链，§7.7）
+
+接口层留了 `MemoRepository`（`core:db`），视图只认它；将来 KSP 与 AGP 9 打通、
+或者 Room 出了 KMP 版本，换实现不动上层。
+
+**已知欠账**：`core:domain` 这一层暂时并进了 `core:db`（只有 repository + 实现两个文件，
+单独开一个模块是空壳）。等同步引擎落地时再拆。
 
 ### 6.5 导航 / DI / UI
 
@@ -486,6 +663,18 @@ packages/kotlin/
   - 注意架构：ARM 虚拟机 + ARM JDK 产出 arm64 包；要出 **x64 包**需在虚拟机里装 x64 JDK（模拟执行，慢但可行），或最终交给 `windows-latest` 出 x64。
 - **Windows 代码签名是硬成本**：Azure Artifact Signing（原 Trusted Signing）约 $9.99/月，但**个人仅限美/加，机构仅限美/加/欧/英——中国个人开发者拿不到**；只能走 OV 证书（约 $200–400/年，通常需企业主体），或接受 SmartScreen 红警。**虚拟机解决构建，不解决证书。**
 - **MSIX 无第一方支持**（jpackage 只出 MSI/EXE）；Windows Store 上架 v1 不做。
+- **打包链路已在 macOS 上验证**（`createDistributable` 出 `FlareMo.app`、
+  `packageDmg` 出 73MB 的 `FlareMo-1.0.0.dmg`）：Windows 上是同一条 `jpackage` 调用，
+  只把 `targetFormats` 换成 `Msi/Exe` 并在 Windows 上跑。**两个已踩到的坑**：
+  1. **`packageVersion` 主版本必须 ≥ 1**，写 `0.1.0` 会被 jpackage 直接跳过、不出安装包
+     （报 "app-version 中的第一个数字不能为零"）。现在钉 `1.0.0`。
+  2. **Homebrew 的 JDK 会被 Compose 插件拦**（`checkJdkVendor`），本地验证临时用
+     `compose.desktop.packaging.checkJdkVendor=false` 放行；**正式发版换
+     Temurin / Corretto**，别用 Homebrew 的分发去打安装包。
+- **Windows 虚拟机尚未建好**：UTM 5.0.8 已装，但缺 Windows 11 ARM64 镜像
+  （UUP dump 的 `get.php` 参数组合没试通；`utmctl` 还需要用户授权 Apple Events）。
+  这两步都需要人：镜像要么用微软官方下载页（需 Apple/微软账号登录），
+  要么用户提供已有的 ISO。**不影响写代码**，只影响「在 Windows 上打包/验收」这一步。
 - Android 签名免费（keystore + Play App Signing）。
 
 ### 6.9 最容易翻车的三个点（Kotlin 侧）
@@ -680,7 +869,99 @@ packages/kotlin/
 
 ---
 
-## 12. 参考
+## 12. 本机开发环境（四端，已落地）
+
+2026-11-09 在这台机器（M5 Pro / 48GB / macOS 27.3）上装好并验证过的东西。
+**命令与路径都实测过**，换机器时按这张表重装即可。
+
+### 12.1 总览
+
+| 端 | 状态 | 工具链位置 | 验证方式 |
+| --- | --- | --- | --- |
+| macOS | ✅ 可构建可运行 | `/Applications/Xcode.app`（27.2 / 27B52）+ CLT | `cd apps/apple && xcodebuild -scheme FlareMo-macOS build` |
+| iOS | ✅ 可构建、模拟器可跑 | 同上 + iOS 27.2 SDK / 模拟器运行时 | `xcodebuild -scheme FlareMo-iOS -destination 'platform=iOS Simulator,name=iPhone 17' build` |
+| Android | ✅ 可构建、模拟器可跑（已装 APK 出画面） | `~/Library/Android/sdk` | `cd apps/kotlin && ./gradlew :androidApp:assembleDebug` |
+| Windows | ⚠️ 代码可编译、窗口已在 macOS JVM 上跑起来；打包成 .msi/.exe 需要 Windows | Compose Desktop（JVM，与 Android 同一份代码） | `./gradlew :desktopApp:run` |
+
+### 12.2 已安装（含版本与路径）
+
+**Apple 侧**
+
+| 组件 | 版本 | 说明 |
+| --- | --- | --- |
+| Xcode | 27.2 (27B52) | App Store 安装；`sudo xcodebuild -license accept` 已接受 |
+| Swift | 6.4.2 | CLT 自带，Xcode 工具链同版本 |
+| iOS SDK / 运行时 | 27.2 | 模拟器设备：iPhone 17 / 18 Pro / iPad Pro 13(M5) |
+
+**JVM / Android 侧**
+
+| 组件 | 版本 | 路径 |
+| --- | --- | --- |
+| OpenJDK | 21.0.13 | `/opt/homebrew/opt/openjdk@21`（brew formula，**不需要 sudo**） |
+| Gradle | 9.8.2 | `/opt/homebrew/bin/gradle`；工程内用 wrapper 钉 9.5.0 |
+| Android cmdline-tools | 15641748 | `~/Library/Android/sdk/cmdline-tools/latest` |
+| Android platform | android-36 | `compileSdk/targetSdk = 36` |
+| Build-tools | 36.1.0 | |
+| Emulator | 37.2.13 | `~/Library/Android/sdk/emulator` |
+| System image | android-36 google_apis arm64-v8a | AVD 名：`flaremo-pixel`（Pixel 7 配置） |
+| Android Studio | 最新 cask | `/Applications/Android Studio.app`（`studio` 命令） |
+
+**Windows 侧（虚拟机）**
+
+| 组件 | 版本 | 说明 |
+| --- | --- | --- |
+| UTM | 5.0.8 | `/Applications/UTM.app` |
+
+`~/.zshrc` 里加了一段带标记的块（`# >>> flaremo dev env >>>`），导出
+`JAVA_HOME` / `ANDROID_HOME` 与三处 PATH。删掉那段即可回滚。
+
+### 12.3 三个必须知道的坑
+
+1. **机器上有两个 JDK**（brew 默认 27、我们装 21）。Gradle 默认拿 27，AGP/Kotlin 会报
+   `Unsupported class file major version`。Kotlin 工程必须在 `gradle.properties` 里钉：
+   `org.gradle.java.home=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`
+2. **CLT 不带 SwiftUI 宏插件**（`libSwiftUIMacros.dylib` 只在 Xcode 平台目录里）。
+   用 CLT 编 Apple 侧必须补 `-Xswiftc -plugin-path -Xswiftc /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins`；
+   `packages/apple/FlareMoKit/Makefile` 已自动处理。
+3. **Xcode 许可未接受时** `xcode-select` 指向 Xcode 会让 `swift build` 直接报 license 错误，
+   用 `DEVELOPER_DIR=/Library/Developer/CommandLineTools` 回落（Makefile 同样已处理）。
+
+### 12.4 常用命令
+
+```bash
+# Apple 内核包
+cd packages/apple/FlareMoKit && make build && make test
+
+# Apple App
+cd apps/apple && xcodebuild -scheme FlareMo-macOS -configuration Debug build
+cd apps/apple && xcodebuild -scheme FlareMo-iOS -configuration Debug \
+  -destination 'platform=iOS Simulator,name=iPhone 17' build
+
+# 设计 token（Swift + Kotlin 一起生成）
+pnpm apple:theme          # 或 node scripts/apple/gen-theme.mjs
+
+# Android
+emulator -avd flaremo-pixel &          # 已在跑就跳过
+cd apps/kotlin && ./gradlew :androidApp:assembleDebug
+adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
+
+# 桌面（Windows 用同一份）
+cd apps/kotlin && ./gradlew :desktopApp:run
+```
+
+### 12.5 还没搞定的
+
+- **Windows 安装包**：`jpackage` 只能在 Windows 上跑。需要一台 Windows 11 ARM64 虚拟机，
+  镜像还没拿到（UUP dump 的 `get.php` 参数组合没试通，下一轮换微软官方 ISO 页面走浏览器）。
+  **不影响开发**：桌面端代码在 macOS 上就能编译运行，只有「打成 .exe/.msi」这一步卡着。
+- **Xcode 27 没有 `Simulator.app`**：这一代把它并进了
+  `/Applications/Xcode.app/Contents/Applications/DeviceHub.app`（`com.apple.dt.Devices`，27.2）。
+  模拟器本身照常（`xcrun simctl` 全功能、App 能装能跑），要看画面就开 DeviceHub。
+  命令行截图用 `xcrun simctl io booted screenshot`，不依赖 GUI。
+
+---
+
+## 13. 参考
 
 - Xcode 27.2 系统要求：https://developer.apple.com/xcode/system-requirements
 - Xcode 项目格式（JSON）：https://developer.apple.com/documentation/xcode/updating-your-xcode-project-configuration-file-format
