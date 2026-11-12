@@ -319,7 +319,9 @@ const messages = {
   "share.unavailable": "Эта публикация недоступна.",
   "explore.title": "Обзор",
   "explore.back": "Назад",
-  "explore.description": "Все публичные записи этого сайта в одном месте",
+  "explore.description":
+    "Маленькие мгновения сегодня — богатые воспоминания завтра",
+  "explore.backToTop": "Наверх",
   "explore.signIn": "Войти",
   "explore.anonymous": "Аноним",
   "explore.empty": "Публичных записей пока нет",

@@ -322,7 +322,9 @@ const messages = {
   "share.unavailable": "Ce partage n'est pas disponible.",
   "explore.title": "Explorer",
   "explore.back": "Retour",
-  "explore.description": "Tous les mémos publics de ce site, réunis ici",
+  "explore.description":
+    "Les petits moments d'aujourd'hui, les précieux souvenirs de demain",
+  "explore.backToTop": "Haut de page",
   "explore.signIn": "Se connecter",
   "explore.anonymous": "Anonyme",
   "explore.empty": "Aucun mémo public pour le moment",

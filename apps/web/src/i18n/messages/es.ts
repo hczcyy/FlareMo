@@ -321,8 +321,8 @@ const messages = {
   "share.unavailable": "Este elemento compartido no está disponible.",
   "explore.title": "Explorar",
   "explore.back": "Volver",
-  "explore.description":
-    "Todos los memos públicos de este sitio, reunidos aquí",
+  "explore.description": "Pequeños momentos hoy, recuerdos entrañables mañana",
+  "explore.backToTop": "Volver arriba",
   "explore.signIn": "Iniciar sesión",
   "explore.anonymous": "Anónimo",
   "explore.empty": "Aún no hay memos públicos",

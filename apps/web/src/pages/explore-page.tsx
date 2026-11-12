@@ -1,5 +1,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { ArrowUpIcon } from "lucide-react";
+import { useEffect, useState } from "react";
 import { listPublicMemos } from "@/api";
 import { FlareMoLogo } from "@/components/flaremo-logo";
 import { MemoReadingView } from "@/components/reading/memo-reading-view";
@@ -25,6 +27,15 @@ const PAGE_SIZE = 20;
  */
 export function ExplorePage() {
   const { locale, t } = useI18n();
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setShowBackToTop(window.scrollY > 400);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   const timelineQuery = useInfiniteQuery({
     queryKey: queryKeys.exploreMemos,
     queryFn: ({ pageParam, signal }) =>
@@ -120,6 +131,18 @@ export function ExplorePage() {
           </div>
         )}
       </main>
+      {showBackToTop && (
+        <Button
+          aria-label={t("explore.backToTop")}
+          className="fixed right-6 bottom-6 z-40 rounded-full shadow-lg"
+          onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+          size="icon"
+          title={t("explore.backToTop")}
+          variant="outline"
+        >
+          <ArrowUpIcon className="size-4" />
+        </Button>
+      )}
     </div>
   );
 }
