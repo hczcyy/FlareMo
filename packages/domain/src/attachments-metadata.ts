@@ -5,6 +5,7 @@ import { requireArticle } from "./articles";
 import { ConflictError, NotFoundError, ValidationError } from "./errors";
 import { createResourceId, parseResourceName } from "./ids";
 import { getMemoById } from "./memos";
+import { getMemoByIdForViewer } from "./memos-read";
 import { assertCanEditMemo, isActiveTeamMember } from "./team-permissions";
 
 export type CreateAttachmentMetadataInput = {
@@ -110,6 +111,29 @@ export async function getAttachmentById(
     throw new NotFoundError("Attachment not found");
   }
 
+  return row;
+}
+
+/**
+ * Anonymous attachment read for public surfaces (the /explore timeline). The
+ * binding attachment → memo resolved through the anonymous read scope is the
+ * whole access check: only files on world-readable, normal memos are
+ * reachable, everything else answers "not found".
+ */
+export async function getPublicMemoAttachmentById(db: FlareMoDb, id: string) {
+  const row = await db.query.attachments.findFirst({
+    where: and(
+      eq(attachments.id, parseResourceName(id, "attachments")),
+      isNull(attachments.deletedAt),
+      eq(attachments.state, "ready"),
+    ),
+  });
+  if (!row?.memoId) {
+    throw new NotFoundError("Attachment not found");
+  }
+  // The anonymous scope (public + normal only) is the authorization boundary;
+  // a non-public memo surfaces as a plain 404, never a permission error.
+  await getMemoByIdForViewer(db, null, row.memoId);
   return row;
 }
 

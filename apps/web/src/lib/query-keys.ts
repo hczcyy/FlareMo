@@ -141,6 +141,8 @@ export const queryKeys = {
   composerWikiSuggestions: (query: string | undefined) =>
     ["composer-wiki-suggestions", query] as const,
   publicShare: (token: string) => ["public-share", token] as const,
+  /** Anonymous explore timeline pages (/explore, no credential). */
+  exploreMemos: ["explore-memos"] as const,
   /** Hourly activity series for the time horizon's day/month/week tabs. */
   statsHourly: {
     allDay: ["stats-hourly-day"] as const,

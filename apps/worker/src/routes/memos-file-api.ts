@@ -1,7 +1,15 @@
-import { getAttachmentById, getPublicShareByToken } from "@flaremo/domain";
+import {
+  getAttachmentById,
+  getPublicMemoAttachmentById,
+  getPublicShareByToken,
+} from "@flaremo/domain";
 import { type Context, Hono } from "hono";
 import { attachmentObjectResponse } from "../attachment-http";
-import { getFlareMoDb, getRequestContext, type HonoBindings } from "../context";
+import {
+  getFlareMoDb,
+  getOptionalRequestContext,
+  type HonoBindings,
+} from "../context";
 import { jsonError } from "../http";
 
 /**
@@ -34,13 +42,32 @@ memosFileApi.get("/attachments/:attachment/:filename", async (c) => {
       return serveAttachment(c, attachment, "public, max-age=3600");
     }
 
-    const context = await getRequestContext(c);
-    const attachment = await getAttachmentById(
-      context.db,
-      context.user,
+    // An unresolvable credential (signed-out visitor, stale session cookie,
+    // no credential at all) falls back to the public-memo branch: files on
+    // world-readable, normal memos stay loadable on public pages such as
+    // /explore. Anyone holding a working session/PAT keeps the full read
+    // scope — the fallback must never widen what a signed-in viewer sees.
+    let context: Awaited<ReturnType<typeof getOptionalRequestContext>> | null =
+      null;
+    try {
+      context = await getOptionalRequestContext(c);
+    } catch {
+      context = null;
+    }
+    if (context?.user) {
+      const attachment = await getAttachmentById(
+        context.db,
+        context.user,
+        attachmentName,
+      );
+      return serveAttachment(c, attachment, "private, max-age=3600");
+    }
+
+    const attachment = await getPublicMemoAttachmentById(
+      context?.db ?? getFlareMoDb(c.env),
       attachmentName,
     );
-    return serveAttachment(c, attachment, "private, max-age=3600");
+    return serveAttachment(c, attachment, "public, max-age=3600");
   } catch (error) {
     return jsonError(c, error);
   }

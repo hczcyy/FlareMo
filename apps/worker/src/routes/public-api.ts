@@ -1,15 +1,97 @@
+import type { AttachmentRow } from "@flaremo/db";
 import {
   getAttachmentById,
+  getFlaremoUserNames,
   getPublicArticleAttachment,
   getPublicShareByToken,
+  listAttachmentsForMemosForViewer,
+  listMemosForViewer,
 } from "@flaremo/domain";
 import { attachmentToDto, memoToDto, shareToDto } from "@flaremo/memos";
 import { Hono } from "hono";
+import { z } from "zod";
 import { attachmentObjectResponse } from "../attachment-http";
 import { getFlareMoDb, type HonoBindings } from "../context";
 import { jsonError } from "../http";
+import { zValidator } from "../validated";
 
 export const publicApi = new Hono<HonoBindings>();
+
+// Page shape for the anonymous /explore timeline: newest first, cursor
+// pagination, no filtering knobs — the corpus is exactly the world-readable
+// normal memos, so anything richer would only widen the query surface.
+const publicListMemosQuerySchema = z.object({
+  page_size: z.coerce.number().int().min(1).max(50).default(20),
+  page_token: z.string().optional(),
+});
+
+// Anonymous visitors may only fetch files through the /file compatibility
+// bridge (the anonymous branch there re-checks memo visibility), so the DTO's
+// authenticated /api/v1 blob URLs are rewritten to that bridge.
+function publicAttachmentDto(attachment: AttachmentRow) {
+  const dto = attachmentToDto(attachment);
+  const fileUrl = `/file/attachments/${dto.id}/${encodeURIComponent(dto.filename)}`;
+  return {
+    ...dto,
+    download_url: fileUrl,
+    preview_url: fileUrl,
+    ...(dto.thumbnail_url
+      ? { thumbnail_url: `${fileUrl}?thumbnail=true` }
+      : {}),
+  };
+}
+
+// The anonymous explore timeline: the same list service the Memos API uses,
+// with the viewer pinned to anonymous — memoReadScope(null) restricts the
+// corpus to public, normal memos, and the explicit visibility/state filters
+// keep that intent readable at the call site.
+publicApi.get(
+  "/memos",
+  zValidator("query", publicListMemosQuerySchema),
+  async (c) => {
+    try {
+      const db = getFlareMoDb(c.env);
+      const { page_size, page_token } = c.req.valid("query");
+      const result = await listMemosForViewer(db, null, {
+        page_size,
+        page_token,
+        order_by: "created_at desc",
+        include_deleted: false,
+        visibility: "public",
+        state: "normal",
+      });
+      const [creatorNames, attachments] = await Promise.all([
+        getFlaremoUserNames(
+          db,
+          result.memos.map((memo) => memo.userId),
+        ),
+        listAttachmentsForMemosForViewer(
+          db,
+          null,
+          result.memos.map((memo) => memo.id),
+        ),
+      ]);
+      const byMemo = new Map<string, AttachmentRow[]>();
+      for (const attachment of attachments) {
+        if (!attachment.memoId) continue;
+        const values = byMemo.get(attachment.memoId) ?? [];
+        values.push(attachment);
+        byMemo.set(attachment.memoId, values);
+      }
+      return c.json({
+        memos: result.memos.map((memo) => ({
+          ...memoToDto(memo, null, creatorNames.get(memo.userId)),
+          attachments: (byMemo.get(memo.id) ?? []).map(publicAttachmentDto),
+        })),
+        ...(result.nextPageToken
+          ? { next_page_token: result.nextPageToken }
+          : {}),
+      });
+    } catch (error) {
+      return jsonError(c, error);
+    }
+  },
+);
 
 publicApi.get("/shares/:token", async (c) => {
   try {

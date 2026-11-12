@@ -31,6 +31,7 @@ export {
   createAttachmentMetadata,
   getAttachmentByClientId,
   getAttachmentById,
+  getPublicMemoAttachmentById,
   normalizeAttachmentClientId,
   parseAttachmentDimensions,
   parseAttachmentDuration,

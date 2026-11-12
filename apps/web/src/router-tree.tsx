@@ -44,6 +44,11 @@ const PublicSharePage = lazy(() =>
     default: module.PublicSharePage,
   })),
 );
+const ExplorePage = lazy(() =>
+  import("@/pages/explore-page").then((module) => ({
+    default: module.ExplorePage,
+  })),
+);
 const LoginPage = lazy(() =>
   import("@/pages/login-page").then((module) => ({
     default: module.LoginPage,
@@ -133,6 +138,23 @@ const shareRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/share/$token",
   component: PublicShareRoutePage,
+});
+
+// The anonymous explore timeline. It sits beside /share on the public side of
+// the guard: no AuthenticatedRoute wrapper, so a signed-out visitor sees the
+// public corpus instead of being redirected to /login.
+function ExploreRoutePage() {
+  return (
+    <Suspense fallback={<RouteLoading />}>
+      <ExplorePage />
+    </Suspense>
+  );
+}
+
+const exploreRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/explore",
+  component: ExploreRoutePage,
 });
 
 function MemoDetailRoutePage() {
@@ -460,6 +482,7 @@ const router = createRouter({
       connectRoute,
     ]),
     shareRoute,
+    exploreRoute,
     loginRoute,
     registerRoute,
     verifyEmailRoute,

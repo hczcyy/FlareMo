@@ -25,7 +25,7 @@ type MemoRelationRow = {
 
 export function memoToDto(
   memo: MemoRow,
-  _user: UserRow,
+  _user: UserRow | null,
   creatorName?: string,
 ): MemoDto {
   return {

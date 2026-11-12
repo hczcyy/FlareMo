@@ -319,6 +319,18 @@ const messages = {
   "explorer.tagDeleted": "Etiqueta eliminada",
   "explorer.tagDeleteFailed": "Falló la eliminación, reintenta",
   "share.unavailable": "Este elemento compartido no está disponible.",
+  "explore.title": "Explorar",
+  "explore.description":
+    "Todos los memos públicos de este sitio, reunidos aquí",
+  "explore.signIn": "Iniciar sesión",
+  "explore.anonymous": "Anónimo",
+  "explore.empty": "Aún no hay memos públicos",
+  "explore.emptyHint": "Los memos marcados como públicos aparecerán aquí.",
+  "explore.loadFailed": "No se pudo cargar",
+  "explore.loadFailedHint":
+    "No se pudo cargar la línea de tiempo. Inténtalo de nuevo más tarde.",
+  "explore.loadMore": "Cargar más",
+  "explore.loading": "Cargando…",
   "share.unavailableDescription":
     "El enlace pudo expirar, haberse revocado o apuntar a una nota que ya no es pública.",
   "memo.visibilityAndShare": "Visibilidad y compartir",

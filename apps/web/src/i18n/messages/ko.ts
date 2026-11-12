@@ -313,6 +313,17 @@ const messages = {
   "explorer.tagDeleted": "태그를 삭제했습니다",
   "explorer.tagDeleteFailed": "삭제 실패, 다시 시도해 주세요",
   "share.unavailable": "이 공유 항목을 사용할 수 없습니다.",
+  "explore.title": "탐색",
+  "explore.description": "이 사이트의 공개 메모를 모아서 보여줍니다",
+  "explore.signIn": "로그인",
+  "explore.anonymous": "익명",
+  "explore.empty": "공개 메모가 아직 없습니다",
+  "explore.emptyHint": "공개로 설정된 메모가 여기에 표시됩니다.",
+  "explore.loadFailed": "불러오지 못했습니다",
+  "explore.loadFailedHint":
+    "타임라인을 불러올 수 없습니다. 잠시 후 다시 시도해 주세요.",
+  "explore.loadMore": "더 보기",
+  "explore.loading": "불러오는 중…",
   "share.unavailableDescription":
     "링크가 만료되었거나 취소되었거나, 노트가 더 이상 공개되지 않을 수 있습니다.",
   "memo.visibilityAndShare": "공개 범위 및 공유",

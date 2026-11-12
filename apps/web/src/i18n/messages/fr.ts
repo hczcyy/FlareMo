@@ -320,6 +320,17 @@ const messages = {
   "explorer.tagDeleted": "Tag supprimé",
   "explorer.tagDeleteFailed": "Échec de la suppression, veuillez réessayer",
   "share.unavailable": "Ce partage n'est pas disponible.",
+  "explore.title": "Explorer",
+  "explore.description": "Tous les mémos publics de ce site, réunis ici",
+  "explore.signIn": "Se connecter",
+  "explore.anonymous": "Anonyme",
+  "explore.empty": "Aucun mémo public pour le moment",
+  "explore.emptyHint": "Les mémos marqués comme publics apparaîtront ici.",
+  "explore.loadFailed": "Échec du chargement",
+  "explore.loadFailedHint":
+    "La chronologie n'a pas pu être chargée. Veuillez réessayer plus tard.",
+  "explore.loadMore": "Charger plus",
+  "explore.loading": "Chargement…",
   "share.unavailableDescription":
     "Le lien a peut-être expiré, été révoqué, ou pointe vers une note qui n'est plus publique.",
   "memo.visibilityAndShare": "Visibilité et partage",

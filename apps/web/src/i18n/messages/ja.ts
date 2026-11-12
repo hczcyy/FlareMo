@@ -314,6 +314,17 @@ const messages = {
   "explorer.tagDeleted": "タグを削除しました",
   "explorer.tagDeleteFailed": "削除に失敗しました。再試行してください",
   "share.unavailable": "この共有は利用できません。",
+  "explore.title": "探索",
+  "explore.description": "このサイトの公開メモをまとめて表示します",
+  "explore.signIn": "ログイン",
+  "explore.anonymous": "匿名",
+  "explore.empty": "公開メモはまだありません",
+  "explore.emptyHint": "公開に設定されたメモがここに表示されます。",
+  "explore.loadFailed": "読み込みに失敗しました",
+  "explore.loadFailedHint":
+    "タイムラインを読み込めませんでした。後でもう一度お試しください。",
+  "explore.loadMore": "もっと見る",
+  "explore.loading": "読み込み中…",
   "share.unavailableDescription":
     "リンクが期限切れ・取り消されたか、ノートが公開でなくなった可能性があります。",
   "memo.visibilityAndShare": "公開範囲と共有",

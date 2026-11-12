@@ -314,6 +314,17 @@ const messages = {
   "explorer.tagDeleted": "Tag deleted",
   "explorer.tagDeleteFailed": "Delete failed, please retry",
   "share.unavailable": "This share is unavailable.",
+  "explore.title": "Explore",
+  "explore.description": "Public memos from this instance, all in one place",
+  "explore.signIn": "Sign in",
+  "explore.anonymous": "Anonymous",
+  "explore.empty": "No public memos yet",
+  "explore.emptyHint": "Memos marked as public will appear here.",
+  "explore.loadFailed": "Couldn't load the timeline",
+  "explore.loadFailedHint":
+    "The timeline could not be loaded. Please try again later.",
+  "explore.loadMore": "Load more",
+  "explore.loading": "Loading…",
   "share.unavailableDescription":
     "The link may have expired, been revoked, or point to a note that is no longer public.",
   "memo.visibilityAndShare": "Visibility & Sharing",
