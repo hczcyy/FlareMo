@@ -143,6 +143,8 @@ export const queryKeys = {
   publicShare: (token: string) => ["public-share", token] as const,
   /** Anonymous explore timeline pages (/explore, no credential). */
   exploreMemos: ["explore-memos"] as const,
+  /** Anonymous explore detail page for one public memo. */
+  publicMemo: (memoId: string) => ["public-memo", memoId] as const,
   /** Hourly activity series for the time horizon's day/month/week tabs. */
   statsHourly: {
     allDay: ["stats-hourly-day"] as const,

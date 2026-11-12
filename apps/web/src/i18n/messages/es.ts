@@ -320,6 +320,7 @@ const messages = {
   "explorer.tagDeleteFailed": "Falló la eliminación, reintenta",
   "share.unavailable": "Este elemento compartido no está disponible.",
   "explore.title": "Explorar",
+  "explore.back": "Volver",
   "explore.description":
     "Todos los memos públicos de este sitio, reunidos aquí",
   "explore.signIn": "Iniciar sesión",

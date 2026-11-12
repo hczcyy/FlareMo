@@ -21,3 +21,19 @@ test("serves the explore timeline to an anonymous visitor", async ({
     page.getByRole("heading", { name: /^探索$|^Explore$/ }),
   ).toBeVisible();
 });
+
+// The detail page behind a timeline timestamp is also public: an unknown id
+// must surface the "unavailable" card on /explore/:id — never a /login
+// redirect. Using a nonexistent id keeps the spec independent of seeded
+// public memos.
+test("keeps an anonymous visitor on the public detail page", async ({
+  page,
+}) => {
+  await page.context().clearCookies();
+
+  await page.goto("/explore/memos-does-not-exist");
+  await expect(page).toHaveURL(/\/explore\/memos-does-not-exist$/);
+  await expect(
+    page.getByText(/^分享不可用|^This share is unavailable$/),
+  ).toBeVisible();
+});

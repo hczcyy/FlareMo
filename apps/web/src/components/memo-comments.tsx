@@ -10,20 +10,26 @@ export const memoCommentsQueryKey = (memoId: string) =>
   ["memo-comments", memoId] as const;
 
 // ================= Twikoo 封装组件 =================
-const TwikooComment = ({ memoId }: { memoId: string }) => {
+// Exported for public pages (/explore/:memoId detail) that must not mount the
+// signed-in MemoComments — its comments query would 401 for anonymous
+// visitors and fire the auth-required event. Same memoId → same Twikoo
+// thread path (`/memos/{id}`), so public and signed-in comments stay one
+// conversation.
+export const TwikooComment = ({ memoId }: { memoId: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let isMounted = true;
-    
+
     const loadTwikoo = () => {
-      if (document.getElementById('twikoo-script')) {
+      if (document.getElementById("twikoo-script")) {
         initTwikoo();
         return;
       }
-      const script = document.createElement('script');
-      script.id = 'twikoo-script';
-      script.src = 'https://registry.npmmirror.com/twikoo/2.0.17/files/dist/twikoo.min.js';
+      const script = document.createElement("script");
+      script.id = "twikoo-script";
+      script.src =
+        "https://registry.npmmirror.com/twikoo/2.0.17/files/dist/twikoo.min.js";
       script.async = true;
       script.onload = () => {
         if (isMounted) initTwikoo();
@@ -32,15 +38,15 @@ const TwikooComment = ({ memoId }: { memoId: string }) => {
     };
 
     const initTwikoo = () => {
-      // @ts-ignore
-      if (typeof window.twikoo !== 'undefined' && containerRef.current) {
-        containerRef.current.innerHTML = '';
-        // @ts-ignore
+      // @ts-expect-error
+      if (typeof window.twikoo !== "undefined" && containerRef.current) {
+        containerRef.current.innerHTML = "";
+        // @ts-expect-error
         window.twikoo.init({
-          envId: 'https://pl.mrhe.net',
+          envId: "https://pl.mrhe.net",
           el: containerRef.current,
           path: `/memos/${memoId}`,
-          lang: 'zh-CN',
+          lang: "zh-CN",
         });
       }
     };
@@ -50,7 +56,7 @@ const TwikooComment = ({ memoId }: { memoId: string }) => {
     return () => {
       isMounted = false;
       if (containerRef.current) {
-        containerRef.current.innerHTML = '';
+        containerRef.current.innerHTML = "";
       }
     };
   }, [memoId]);
@@ -75,13 +81,13 @@ export function MemoComments({
   const { t } = useI18n();
   const inline = variant === "inline";
   const sectionRef = useRef<HTMLElement | null>(null);
-  
+
   // 为了不报错，保留原有的 query 逻辑（即使不显示）
   const commentsQuery = useQuery({
     queryKey: memoCommentsQueryKey(memoId),
     queryFn: () => listMemoComments(memoId),
   });
-  
+
   useEffect(() => {
     if (inline || !commentsQuery.data) return;
     if (window.location.hash !== "#comments") return;

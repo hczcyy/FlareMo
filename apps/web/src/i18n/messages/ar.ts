@@ -310,6 +310,7 @@ const messages = {
   "explorer.tagDeleteFailed": "فشل الحذف، أعد المحاولة",
   "share.unavailable": "هذه المشاركة غير متاحة.",
   "explore.title": "استكشاف",
+  "explore.back": "رجوع",
   "explore.description": "جميع الملاحظات العامة من هذا الموقع في مكان واحد",
   "explore.signIn": "تسجيل الدخول",
   "explore.anonymous": "مجهول",

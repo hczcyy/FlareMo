@@ -84,7 +84,16 @@ export function ExplorePage() {
               <CardTitle className="text-sm font-normal text-muted-foreground">
                 {memo.creator_name ?? t("explore.anonymous")}
                 {" · "}
-                {formatMemoTime(memo.display_time, locale)}
+                {/* The timestamp deep-links to the public detail page, where
+                    the Twikoo thread lives — same memoId as the signed-in
+                    detail, so both share one conversation. */}
+                <Link
+                  className="transition-colors hover:text-foreground"
+                  params={{ memoId: memo.id }}
+                  to="/explore/$memoId"
+                >
+                  {formatMemoTime(memo.display_time, locale)}
+                </Link>
               </CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-5">

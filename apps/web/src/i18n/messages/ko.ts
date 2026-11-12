@@ -314,6 +314,7 @@ const messages = {
   "explorer.tagDeleteFailed": "삭제 실패, 다시 시도해 주세요",
   "share.unavailable": "이 공유 항목을 사용할 수 없습니다.",
   "explore.title": "탐색",
+  "explore.back": "돌아가기",
   "explore.description": "이 사이트의 공개 메모를 모아서 보여줍니다",
   "explore.signIn": "로그인",
   "explore.anonymous": "익명",

@@ -1,13 +1,20 @@
-import type { AttachmentRow } from "@flaremo/db";
+import type { MemoDto } from "@flaremo/contracts";
+import type { AttachmentRow, MemoRow } from "@flaremo/db";
 import {
   getAttachmentById,
   getFlaremoUserNames,
+  getMemoByIdForViewer,
   getPublicArticleAttachment,
   getPublicShareByToken,
   listAttachmentsForMemosForViewer,
   listMemosForViewer,
 } from "@flaremo/domain";
-import { attachmentToDto, memoToDto, shareToDto } from "@flaremo/memos";
+import {
+  attachmentToDto,
+  memoToDto,
+  parseMemosResourceName,
+  shareToDto,
+} from "@flaremo/memos";
 import { Hono } from "hono";
 import { z } from "zod";
 import { attachmentObjectResponse } from "../attachment-http";
@@ -37,6 +44,19 @@ function publicAttachmentDto(attachment: AttachmentRow) {
     preview_url: fileUrl,
     ...(dto.thumbnail_url
       ? { thumbnail_url: `${fileUrl}?thumbnail=true` }
+      : {}),
+  };
+}
+
+function publicMemoDto(
+  memo: MemoRow,
+  creatorName: string | undefined,
+  attachments: AttachmentRow[] | undefined,
+): MemoDto {
+  return {
+    ...memoToDto(memo, null, creatorName),
+    ...(attachments
+      ? { attachments: attachments.map(publicAttachmentDto) }
       : {}),
   };
 }
@@ -79,10 +99,13 @@ publicApi.get(
         byMemo.set(attachment.memoId, values);
       }
       return c.json({
-        memos: result.memos.map((memo) => ({
-          ...memoToDto(memo, null, creatorNames.get(memo.userId)),
-          attachments: (byMemo.get(memo.id) ?? []).map(publicAttachmentDto),
-        })),
+        memos: result.memos.map((memo) =>
+          publicMemoDto(
+            memo,
+            creatorNames.get(memo.userId),
+            byMemo.get(memo.id),
+          ),
+        ),
         ...(result.nextPageToken
           ? { next_page_token: result.nextPageToken }
           : {}),
@@ -92,6 +115,33 @@ publicApi.get(
     }
   },
 );
+
+// Single public memo for the anonymous detail page (/explore/:memoId). The
+// anonymous read scope is the authorization boundary: a non-public or
+// non-normal memo answers 404, never a permission error.
+publicApi.get("/memos/:memoId", async (c) => {
+  try {
+    const db = getFlareMoDb(c.env);
+    const memo = await getMemoByIdForViewer(
+      db,
+      null,
+      parseMemosResourceName(c.req.param("memoId")),
+    );
+    const [creatorNames, attachments] = await Promise.all([
+      getFlaremoUserNames(db, [memo.userId]),
+      listAttachmentsForMemosForViewer(db, null, [memo.id]),
+    ]);
+    return c.json(
+      publicMemoDto(
+        memo,
+        creatorNames.get(memo.userId),
+        attachments.filter((a) => a.memoId === memo.id),
+      ),
+    );
+  } catch (error) {
+    return jsonError(c, error);
+  }
+});
 
 publicApi.get("/shares/:token", async (c) => {
   try {

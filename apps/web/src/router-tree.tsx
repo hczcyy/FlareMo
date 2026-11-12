@@ -49,6 +49,11 @@ const ExplorePage = lazy(() =>
     default: module.ExplorePage,
   })),
 );
+const PublicMemoDetailPage = lazy(() =>
+  import("@/pages/public-memo-detail-page").then((module) => ({
+    default: module.PublicMemoDetailPage,
+  })),
+);
 const LoginPage = lazy(() =>
   import("@/pages/login-page").then((module) => ({
     default: module.LoginPage,
@@ -140,9 +145,11 @@ const shareRoute = createRoute({
   component: PublicShareRoutePage,
 });
 
-// The anonymous explore timeline. It sits beside /share on the public side of
+// The anonymous explore area. It sits beside /share on the public side of
 // the guard: no AuthenticatedRoute wrapper, so a signed-out visitor sees the
-// public corpus instead of being redirected to /login.
+// public corpus instead of being redirected to /login. The parent route has
+// no component of its own — the index renders the timeline and the $memoId
+// child renders the public detail page with its Twikoo comment thread.
 function ExploreRoutePage() {
   return (
     <Suspense fallback={<RouteLoading />}>
@@ -151,10 +158,30 @@ function ExploreRoutePage() {
   );
 }
 
+function ExploreMemoDetailRoutePage() {
+  const { memoId } = exploreMemoRoute.useParams();
+  return (
+    <Suspense fallback={<RouteLoading />}>
+      <PublicMemoDetailPage memoId={memoId} />
+    </Suspense>
+  );
+}
+
 const exploreRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/explore",
+});
+
+const exploreIndexRoute = createRoute({
+  getParentRoute: () => exploreRoute,
+  path: "/",
   component: ExploreRoutePage,
+});
+
+const exploreMemoRoute = createRoute({
+  getParentRoute: () => exploreRoute,
+  path: "/$memoId",
+  component: ExploreMemoDetailRoutePage,
 });
 
 function MemoDetailRoutePage() {
@@ -482,7 +509,7 @@ const router = createRouter({
       connectRoute,
     ]),
     shareRoute,
-    exploreRoute,
+    exploreRoute.addChildren([exploreIndexRoute, exploreMemoRoute]),
     loginRoute,
     registerRoute,
     verifyEmailRoute,

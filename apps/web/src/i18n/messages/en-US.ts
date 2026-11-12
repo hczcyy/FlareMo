@@ -315,6 +315,7 @@ const messages = {
   "explorer.tagDeleteFailed": "Delete failed, please retry",
   "share.unavailable": "This share is unavailable.",
   "explore.title": "Explore",
+  "explore.back": "Back",
   "explore.description": "Public memos from this instance, all in one place",
   "explore.signIn": "Sign in",
   "explore.anonymous": "Anonymous",

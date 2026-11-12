@@ -1,4 +1,4 @@
-import type { ListMemosResponse } from "@flaremo/contracts";
+import type { ListMemosResponse, MemoDto } from "@flaremo/contracts";
 import { apiRequest } from "./client";
 
 export type ListPublicMemosParams = {
@@ -23,6 +23,15 @@ export async function listPublicMemos(
     {
       signal,
     },
+    { authRequired: false },
+  );
+}
+
+/** Anonymous single memo (GET /api/public/memos/:id) for the detail page. */
+export async function getPublicMemo(memoId: string, signal?: AbortSignal) {
+  return apiRequest<MemoDto>(
+    `/api/public/memos/${encodeURIComponent(memoId)}`,
+    { signal },
     { authRequired: false },
   );
 }

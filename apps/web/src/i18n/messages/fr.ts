@@ -321,6 +321,7 @@ const messages = {
   "explorer.tagDeleteFailed": "Échec de la suppression, veuillez réessayer",
   "share.unavailable": "Ce partage n'est pas disponible.",
   "explore.title": "Explorer",
+  "explore.back": "Retour",
   "explore.description": "Tous les mémos publics de ce site, réunis ici",
   "explore.signIn": "Se connecter",
   "explore.anonymous": "Anonyme",

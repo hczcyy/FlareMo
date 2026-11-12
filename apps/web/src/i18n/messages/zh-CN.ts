@@ -291,6 +291,7 @@ const messages = {
   "share.unavailableDescription":
     "链接可能已过期、被撤销或对应记录不可公开访问。",
   "explore.title": "探索",
+  "explore.back": "返回",
   "explore.description": "这里汇集了本站所有公开的记录",
   "explore.signIn": "登录",
   "explore.anonymous": "匿名",

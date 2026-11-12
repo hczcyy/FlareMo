@@ -318,6 +318,7 @@ const messages = {
   "explorer.tagDeleteFailed": "Не удалось удалить, повторите попытку",
   "share.unavailable": "Эта публикация недоступна.",
   "explore.title": "Обзор",
+  "explore.back": "Назад",
   "explore.description": "Все публичные записи этого сайта в одном месте",
   "explore.signIn": "Войти",
   "explore.anonymous": "Аноним",

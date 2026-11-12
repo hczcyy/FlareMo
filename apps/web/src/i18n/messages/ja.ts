@@ -315,6 +315,7 @@ const messages = {
   "explorer.tagDeleteFailed": "削除に失敗しました。再試行してください",
   "share.unavailable": "この共有は利用できません。",
   "explore.title": "探索",
+  "explore.back": "戻る",
   "explore.description": "このサイトの公開メモをまとめて表示します",
   "explore.signIn": "ログイン",
   "explore.anonymous": "匿名",
