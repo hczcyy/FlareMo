@@ -13,8 +13,9 @@ export const memoCommentsQueryKey = (memoId: string) =>
 // Exported for public pages (/explore/:memoId detail) that must not mount the
 // signed-in MemoComments — its comments query would 401 for anonymous
 // visitors and fire the auth-required event. Same memoId → same Twikoo
-// thread path (`/memos/{id}`), so public and signed-in comments stay one
-// conversation.
+// thread path (`/explore/{id}`, the canonical public detail page), so public
+// and signed-in comments stay one conversation — and the URL Twikoo's admin
+// panel shows actually opens.
 export const TwikooComment = ({ memoId }: { memoId: string }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -45,7 +46,7 @@ export const TwikooComment = ({ memoId }: { memoId: string }) => {
         window.twikoo.init({
           envId: "https://pl.mrhe.net",
           el: containerRef.current,
-          path: `/memos/${memoId}`,
+          path: `/explore/${memoId}`,
           lang: "zh-CN",
         });
       }
