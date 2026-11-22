@@ -30,14 +30,14 @@ jobs:
       - name: Build project
         run: pnpm build
         
-      # 1. 自动按顺序执行 migrations 里的 SQL 建表
+      # 自动按顺序执行 migrations 里的 SQL 建表
       - name: Apply D1 Migrations
         run: pnpm exec wrangler d1 migrations apply flaremo --remote
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # 2. 强制通过命令行注入密钥，绕过 Cloudflare 网页的限制
+      # 强制通过命令行注入密钥，绕过 Cloudflare 网页的锁死限制
       - name: Force Set Cloudflare Secrets
         run: |
           echo "${{ secrets.FLAREMO_BOOTSTRAP_SECRET }}" | pnpm exec wrangler secret put FLAREMO_BOOTSTRAP_SECRET --name flaremo
@@ -46,7 +46,6 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # 3. 最终部署 Worker
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
         with:
